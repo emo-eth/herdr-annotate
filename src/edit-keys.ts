@@ -12,7 +12,6 @@ export type EditAction =
 const isWordChar = (char: string | undefined): boolean =>
   char !== undefined && char !== "\n" && !/\s/.test(char);
 
-/** Index of the start of the word before `cursor` (readline backward-word). */
 export function wordStart(chars: readonly string[], cursor: number): number {
   let index = Math.min(cursor, chars.length);
   while (index > 0 && !isWordChar(chars[index - 1]) && chars[index - 1] !== "\n") index -= 1;
@@ -21,7 +20,6 @@ export function wordStart(chars: readonly string[], cursor: number): number {
   return index;
 }
 
-/** Index of the end of the word after `cursor` (readline forward-word). */
 export function wordEnd(chars: readonly string[], cursor: number): number {
   let index = Math.max(0, cursor);
   while (index < chars.length && !isWordChar(chars[index]) && chars[index] !== "\n") index += 1;
@@ -42,14 +40,6 @@ export function lineEnd(chars: readonly string[], cursor: number): number {
   return index;
 }
 
-/**
- * Map a readline keypress to an editing action beyond single-character moves.
- *
- * Terminals encode Option/Alt as xterm modifier 3 and Command/Super as 9; Node's
- * readline folds both into `key.meta`, so the raw sequence tells them apart.
- * Ghostty (and most macOS terminals) rewrite Cmd+Backspace to Ctrl+U and
- * Opt+Backspace to Ctrl+W, matching the readline line/word kill bindings.
- */
 export function resolveEditKey(key: readline.Key): EditAction {
   const sequence = key.sequence ?? "";
   const superModifier = /;9[A-Z~]$/.test(sequence);
@@ -65,6 +55,8 @@ export function resolveEditKey(key: readline.Key): EditAction {
 
   if (key.name === "left" && (key.meta || key.ctrl)) return superModifier ? "line-start" : "word-left";
   if (key.name === "right" && (key.meta || key.ctrl)) return superModifier ? "line-end" : "word-right";
+  if (key.name === "up" && key.meta && !superModifier) return "line-start";
+  if (key.name === "down" && key.meta && !superModifier) return "line-end";
 
   return null;
 }

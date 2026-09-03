@@ -60,6 +60,11 @@ describe("resolveEditKey", () => {
     expect(resolveEditKey({ meta: true, name: "f", sequence: "\x1bf" })).toBe("word-right");
   });
 
+  test("Option vertical arrows move to line edges", () => {
+    expect(resolveEditKey({ meta: true, name: "up", sequence: "\x1b[1;3A" })).toBe("line-start");
+    expect(resolveEditKey({ meta: true, name: "down", sequence: "\x1b[1;3B" })).toBe("line-end");
+  });
+
   test("Command arrows move to line edges", () => {
     expect(resolveEditKey({ meta: true, name: "left", sequence: "\x1b[1;9D" })).toBe("line-start");
     expect(resolveEditKey({ meta: true, name: "right", sequence: "\x1b[1;9C" })).toBe("line-end");

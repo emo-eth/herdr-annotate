@@ -46,6 +46,70 @@ enum SavedFieldOrder {
     ContextThenCapturedAt,
 }
 
+fn is_word_character(character: char) -> bool {
+    character != '\n' && !(character.is_whitespace() || character == '\u{feff}')
+}
+
+fn word_start(characters: &[char], cursor: usize) -> usize {
+    let mut index = cursor.min(characters.len());
+    while index > 0
+        && characters.get(index - 1).is_some_and(|character| {
+            !is_word_character(*character) && *character != '\n'
+        })
+    {
+        index -= 1;
+    }
+    if index > 0 && characters.get(index - 1) == Some(&'\n') && index == cursor {
+        return index - 1;
+    }
+    while index > 0
+        && characters
+            .get(index - 1)
+            .is_some_and(|character| is_word_character(*character))
+    {
+        index -= 1;
+    }
+    index
+}
+
+fn word_end(characters: &[char], cursor: usize) -> usize {
+    let mut index = cursor;
+    while index < characters.len()
+        && characters.get(index).is_some_and(|character| {
+            !is_word_character(*character) && *character != '\n'
+        })
+    {
+        index += 1;
+    }
+    if index < characters.len() && characters.get(index) == Some(&'\n') && index == cursor {
+        return index + 1;
+    }
+    while index < characters.len()
+        && characters
+            .get(index)
+            .is_some_and(|character| is_word_character(*character))
+    {
+        index += 1;
+    }
+    index
+}
+
+fn line_start(characters: &[char], cursor: usize) -> usize {
+    let mut index = cursor;
+    while index > 0 && characters.get(index - 1) != Some(&'\n') {
+        index -= 1;
+    }
+    index
+}
+
+fn line_end(characters: &[char], cursor: usize) -> usize {
+    let mut index = cursor;
+    while index < characters.len() && characters.get(index) != Some(&'\n') {
+        index += 1;
+    }
+    index
+}
+
 impl EditorApp {
     /// Start an empty comment for a captured selection.
     pub fn new(pending: PendingAnnotation) -> Self {
@@ -177,8 +241,56 @@ impl EditorApp {
         if key.code == KeyCode::Char('s') && key.modifiers.contains(KeyModifiers::CONTROL) {
             return true;
         }
+        let control = key.modifiers.contains(KeyModifiers::CONTROL);
+        let alt = key.modifiers.contains(KeyModifiers::ALT);
+        let super_modifier = key.modifiers.contains(KeyModifiers::SUPER);
         match key.code {
             KeyCode::Esc => self.quit = true,
+            KeyCode::Char('u') if control => {
+                let start = line_start(&self.comment, self.cursor);
+                drop(self.comment.drain(start..self.cursor));
+                self.cursor = start;
+            }
+            KeyCode::Char('w') if control => {
+                let start = word_start(&self.comment, self.cursor);
+                drop(self.comment.drain(start..self.cursor));
+                self.cursor = start;
+            }
+            KeyCode::Backspace if alt => {
+                let start = word_start(&self.comment, self.cursor);
+                drop(self.comment.drain(start..self.cursor));
+                self.cursor = start;
+            }
+            KeyCode::Char('a') if control => {
+                self.cursor = line_start(&self.comment, self.cursor);
+            }
+            KeyCode::Char('e') if control => {
+                self.cursor = line_end(&self.comment, self.cursor);
+            }
+            KeyCode::Char('b') if alt => {
+                self.cursor = word_start(&self.comment, self.cursor);
+            }
+            KeyCode::Char('f') if alt => {
+                self.cursor = word_end(&self.comment, self.cursor);
+            }
+            KeyCode::Left if super_modifier => {
+                self.cursor = line_start(&self.comment, self.cursor);
+            }
+            KeyCode::Right if super_modifier => {
+                self.cursor = line_end(&self.comment, self.cursor);
+            }
+            KeyCode::Left if alt || control => {
+                self.cursor = word_start(&self.comment, self.cursor);
+            }
+            KeyCode::Right if alt || control => {
+                self.cursor = word_end(&self.comment, self.cursor);
+            }
+            KeyCode::Up if alt => {
+                self.cursor = line_start(&self.comment, self.cursor);
+            }
+            KeyCode::Down if alt => {
+                self.cursor = line_end(&self.comment, self.cursor);
+            }
             KeyCode::Backspace => {
                 if self.cursor > 0 {
                     self.cursor -= 1;
@@ -194,23 +306,13 @@ impl EditorApp {
             KeyCode::Right => self.cursor = (self.cursor + 1).min(self.comment.len()),
             KeyCode::Up => self.move_cursor_vertical(-1),
             KeyCode::Down => self.move_cursor_vertical(1),
-            KeyCode::Home => {
-                while self.cursor > 0 && self.comment.get(self.cursor - 1) != Some(&'\n') {
-                    self.cursor -= 1;
-                }
-            }
-            KeyCode::End => {
-                while self.cursor < self.comment.len()
-                    && self.comment.get(self.cursor) != Some(&'\n')
-                {
-                    self.cursor += 1;
-                }
-            }
+            KeyCode::Home => self.cursor = line_start(&self.comment, self.cursor),
+            KeyCode::End => self.cursor = line_end(&self.comment, self.cursor),
             KeyCode::Enter => self.insert('\n'),
             KeyCode::Char(character)
-                if !key
-                    .modifiers
-                    .intersects(KeyModifiers::CONTROL | KeyModifiers::ALT) =>
+                if !key.modifiers.intersects(
+                    KeyModifiers::CONTROL | KeyModifiers::ALT | KeyModifiers::SUPER,
+                ) =>
             {
                 self.insert(character);
             }
@@ -438,6 +540,72 @@ mod tests {
         let mut empty = app();
         assert!(!empty.save(None));
         assert_eq!(empty.status, "Write a comment before saving.");
+    }
+
+    #[test]
+    fn navigation_keys_match_the_typescript_editor() {
+        let mut editor = app();
+        editor.comment = "foo-bar baz\nqux".chars().collect();
+
+        editor.cursor = 0;
+        editor.handle_key(KeyEvent::new(KeyCode::Right, KeyModifiers::ALT));
+        assert_eq!(editor.cursor, 7);
+        editor.handle_key(KeyEvent::new(KeyCode::Char('f'), KeyModifiers::ALT));
+        assert_eq!(editor.cursor, 11);
+
+        editor.cursor = editor.comment.len();
+        editor.handle_key(KeyEvent::new(KeyCode::Left, KeyModifiers::ALT));
+        assert_eq!(editor.cursor, 12);
+        editor.handle_key(KeyEvent::new(KeyCode::Char('b'), KeyModifiers::ALT));
+        assert_eq!(editor.cursor, 11);
+        editor.handle_key(KeyEvent::new(KeyCode::Left, KeyModifiers::ALT));
+        assert_eq!(editor.cursor, 8);
+        editor.handle_key(KeyEvent::new(KeyCode::Right, KeyModifiers::CONTROL));
+        assert_eq!(editor.cursor, 11);
+
+        editor.cursor = 9;
+        editor.handle_key(KeyEvent::new(KeyCode::Up, KeyModifiers::ALT));
+        assert_eq!(editor.cursor, 0);
+        editor.cursor = 9;
+        editor.handle_key(KeyEvent::new(KeyCode::Down, KeyModifiers::ALT));
+        assert_eq!(editor.cursor, 11);
+        editor.cursor = 9;
+        editor.handle_key(KeyEvent::new(KeyCode::Left, KeyModifiers::SUPER));
+        assert_eq!(editor.cursor, 0);
+        editor.cursor = 9;
+        editor.handle_key(KeyEvent::new(KeyCode::Right, KeyModifiers::SUPER));
+        assert_eq!(editor.cursor, 11);
+        editor.cursor = 9;
+        editor.handle_key(KeyEvent::new(KeyCode::Char('a'), KeyModifiers::CONTROL));
+        assert_eq!(editor.cursor, 0);
+        editor.cursor = 9;
+        editor.handle_key(KeyEvent::new(KeyCode::Char('e'), KeyModifiers::CONTROL));
+        assert_eq!(editor.cursor, 11);
+
+        editor.cursor = 9;
+        editor.handle_key(KeyEvent::from(KeyCode::Left));
+        assert_eq!(editor.cursor, 8);
+        editor.handle_key(KeyEvent::from(KeyCode::Right));
+        assert_eq!(editor.cursor, 9);
+    }
+
+    #[test]
+    fn deletion_keys_match_the_typescript_editor() {
+        let mut editor = app();
+        editor.comment = "first line\nsecond word".chars().collect();
+        editor.cursor = editor.comment.len();
+        editor.handle_key(KeyEvent::new(KeyCode::Char('w'), KeyModifiers::CONTROL));
+        assert_eq!(editor.comment.iter().collect::<String>(), "first line\nsecond ");
+
+        editor.comment = "first line\nsecond word".chars().collect();
+        editor.cursor = editor.comment.len();
+        editor.handle_key(KeyEvent::new(KeyCode::Backspace, KeyModifiers::ALT));
+        assert_eq!(editor.comment.iter().collect::<String>(), "first line\nsecond ");
+
+        editor.comment = "first line\nsecond word".chars().collect();
+        editor.cursor = editor.comment.len();
+        editor.handle_key(KeyEvent::new(KeyCode::Char('u'), KeyModifiers::CONTROL));
+        assert_eq!(editor.comment.iter().collect::<String>(), "first line\n");
     }
 
     #[test]
