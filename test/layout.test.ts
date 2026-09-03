@@ -57,8 +57,10 @@ describe("cursorAtEditorCell", () => {
   });
 
   test("keeps combining marks attached to their base glyph", () => {
-    const comment = chars("a\u0301b");
-    expect(cursorAtEditorCell(comment, 0, geometry.left + 1, geometry.editorTop, geometry)).toBe(2);
+    const narrow = chars("a\u0301b");
+    expect(cursorAtEditorCell(narrow, 0, geometry.left + 1, geometry.editorTop, geometry)).toBe(2);
+    const wide = chars("한\u0301b");
+    expect(cursorAtEditorCell(wide, 0, geometry.left + 1, geometry.editorTop, geometry)).toBe(2);
   });
 
   test("maps wrapped rows", () => {

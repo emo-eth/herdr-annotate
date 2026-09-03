@@ -50,7 +50,12 @@ pub fn layout_comment(comment: &[char], cursor: usize, width: usize) -> CommentL
     }
 }
 
-pub fn cursor_at_visual_position(comment: &[char], row: usize, column: usize, width: usize) -> usize {
+pub fn cursor_at_visual_position(
+    comment: &[char],
+    row: usize,
+    column: usize,
+    width: usize,
+) -> usize {
     let safe_width = width.max(1);
     let mut visual_row = 0;
     let mut visual_column = 0;
@@ -77,11 +82,17 @@ pub fn cursor_at_visual_position(comment: &[char], row: usize, column: usize, wi
                 return index;
             }
             if cells > 0 && column < visual_column + cells {
-                return if cells == 2 && column == visual_column + 1 {
-                    index + 1
-                } else {
-                    index
-                };
+                if cells == 2 && column == visual_column + 1 {
+                    let mut next = index + 1;
+                    while let Some(trailing) = comment.get(next).copied() {
+                        if trailing == '\n' || char_width(trailing) > 0 {
+                            break;
+                        }
+                        next += 1;
+                    }
+                    return next;
+                }
+                return index;
             }
         }
         visual_column += cells;
@@ -132,8 +143,10 @@ mod tests {
 
     #[test]
     fn cursor_mapping_keeps_combining_marks_with_their_base_glyph() {
-        let comment = "a\u{301}b".chars().collect::<Vec<_>>();
-        assert_eq!(cursor_at_visual_position(&comment, 0, 1, 8), 2);
+        let narrow = "a\u{301}b".chars().collect::<Vec<_>>();
+        assert_eq!(cursor_at_visual_position(&narrow, 0, 1, 8), 2);
+        let wide = "한\u{301}b".chars().collect::<Vec<_>>();
+        assert_eq!(cursor_at_visual_position(&wide, 0, 1, 8), 2);
     }
 
     #[test]

@@ -57,9 +57,9 @@ fn is_word_character(character: char) -> bool {
 fn word_start(characters: &[char], cursor: usize) -> usize {
     let mut index = cursor.min(characters.len());
     while index > 0
-        && characters.get(index - 1).is_some_and(|character| {
-            !is_word_character(*character) && *character != '\n'
-        })
+        && characters
+            .get(index - 1)
+            .is_some_and(|character| !is_word_character(*character) && *character != '\n')
     {
         index -= 1;
     }
@@ -79,9 +79,9 @@ fn word_start(characters: &[char], cursor: usize) -> usize {
 fn word_end(characters: &[char], cursor: usize) -> usize {
     let mut index = cursor;
     while index < characters.len()
-        && characters.get(index).is_some_and(|character| {
-            !is_word_character(*character) && *character != '\n'
-        })
+        && characters
+            .get(index)
+            .is_some_and(|character| !is_word_character(*character) && *character != '\n')
     {
         index += 1;
     }
@@ -338,11 +338,7 @@ impl EditorApp {
         let editor_top = 3 + selection_rows;
         let x = usize::from(mouse.column);
         let y = usize::from(mouse.row);
-        if x < left
-            || x >= left + inner_width
-            || y < editor_top
-            || y >= editor_top + editor_rows
-        {
+        if x < left || x >= left + inner_width || y < editor_top || y >= editor_top + editor_rows {
             return;
         }
         let editing = layout_comment(&self.comment, self.cursor, inner_width);
@@ -519,8 +515,8 @@ pub fn run() -> Result<(), String> {
         }
         Ok(())
     })();
-    let mouse_cleanup = execute!(std::io::stdout(), DisableMouseCapture)
-        .map_err(|error| error.to_string());
+    let mouse_cleanup =
+        execute!(std::io::stdout(), DisableMouseCapture).map_err(|error| error.to_string());
     ratatui::restore();
     result.and(mouse_cleanup)
 }
@@ -547,7 +543,7 @@ mod tests {
             captured_at: "captured".to_owned(),
         })
     }
- 
+
     fn mouse(kind: MouseEventKind, column: u16, row: u16) -> MouseEvent {
         MouseEvent {
             kind,
@@ -648,12 +644,18 @@ mod tests {
         editor.comment = "first line\nsecond word".chars().collect();
         editor.cursor = editor.comment.len();
         editor.handle_key(KeyEvent::new(KeyCode::Char('w'), KeyModifiers::CONTROL));
-        assert_eq!(editor.comment.iter().collect::<String>(), "first line\nsecond ");
+        assert_eq!(
+            editor.comment.iter().collect::<String>(),
+            "first line\nsecond "
+        );
 
         editor.comment = "first line\nsecond word".chars().collect();
         editor.cursor = editor.comment.len();
         editor.handle_key(KeyEvent::new(KeyCode::Backspace, KeyModifiers::ALT));
-        assert_eq!(editor.comment.iter().collect::<String>(), "first line\nsecond ");
+        assert_eq!(
+            editor.comment.iter().collect::<String>(),
+            "first line\nsecond "
+        );
 
         editor.comment = "first line\nsecond word".chars().collect();
         editor.cursor = editor.comment.len();
@@ -708,19 +710,35 @@ mod tests {
         let _ = std::fs::remove_file(&missing);
         assert_eq!(remove_pending_file(&missing), Ok(()));
     }
- 
+
     #[test]
     fn mouse_clicks_map_narrow_and_wide_glyph_cells() {
         let mut editor = app();
         editor.comment = "a한b".chars().collect();
         editor.cursor = editor.comment.len();
-        editor.handle_mouse(mouse(MouseEventKind::Down(MouseButton::Left), 2, 10), 86, 22);
+        editor.handle_mouse(
+            mouse(MouseEventKind::Down(MouseButton::Left), 2, 10),
+            86,
+            22,
+        );
         assert_eq!(editor.cursor, 0);
-        editor.handle_mouse(mouse(MouseEventKind::Down(MouseButton::Left), 3, 10), 86, 22);
+        editor.handle_mouse(
+            mouse(MouseEventKind::Down(MouseButton::Left), 3, 10),
+            86,
+            22,
+        );
         assert_eq!(editor.cursor, 1);
-        editor.handle_mouse(mouse(MouseEventKind::Down(MouseButton::Left), 4, 10), 86, 22);
+        editor.handle_mouse(
+            mouse(MouseEventKind::Down(MouseButton::Left), 4, 10),
+            86,
+            22,
+        );
         assert_eq!(editor.cursor, 2);
-        editor.handle_mouse(mouse(MouseEventKind::Down(MouseButton::Left), 6, 10), 86, 22);
+        editor.handle_mouse(
+            mouse(MouseEventKind::Down(MouseButton::Left), 6, 10),
+            86,
+            22,
+        );
         assert_eq!(editor.cursor, 3);
     }
 
@@ -729,7 +747,11 @@ mod tests {
         let mut wrapped = app();
         wrapped.comment = format!("{}한", "a".repeat(15)).chars().collect();
         wrapped.cursor = wrapped.comment.len();
-        wrapped.handle_mouse(mouse(MouseEventKind::Down(MouseButton::Left), 17, 6), 20, 10);
+        wrapped.handle_mouse(
+            mouse(MouseEventKind::Down(MouseButton::Left), 17, 6),
+            20,
+            10,
+        );
         assert_eq!(wrapped.cursor, 15);
         wrapped.handle_mouse(mouse(MouseEventKind::Down(MouseButton::Left), 2, 7), 20, 10);
         assert_eq!(wrapped.cursor, 15);
@@ -751,9 +773,17 @@ mod tests {
         let mut editor = app();
         editor.comment = "a\n\nb".chars().collect();
         editor.cursor = editor.comment.len();
-        editor.handle_mouse(mouse(MouseEventKind::Down(MouseButton::Left), 2, 11), 86, 22);
+        editor.handle_mouse(
+            mouse(MouseEventKind::Down(MouseButton::Left), 2, 11),
+            86,
+            22,
+        );
         assert_eq!(editor.cursor, 2);
-        editor.handle_mouse(mouse(MouseEventKind::Down(MouseButton::Left), 2, 13), 86, 22);
+        editor.handle_mouse(
+            mouse(MouseEventKind::Down(MouseButton::Left), 2, 13),
+            86,
+            22,
+        );
         assert_eq!(editor.cursor, 4);
     }
 
@@ -771,7 +801,11 @@ mod tests {
         ] {
             editor.handle_mouse(mouse(kind, 2, 10), 86, 22);
         }
-        editor.handle_mouse(mouse(MouseEventKind::Down(MouseButton::Left), 1, 10), 86, 22);
+        editor.handle_mouse(
+            mouse(MouseEventKind::Down(MouseButton::Left), 1, 10),
+            86,
+            22,
+        );
         editor.handle_mouse(mouse(MouseEventKind::Down(MouseButton::Left), 2, 9), 86, 22);
         assert_eq!(editor.cursor, 1);
     }

@@ -60,7 +60,16 @@ export function cursorAtEditorCell(
     if (row === targetRow) {
       if (index === comment.length || char === "\n") return index;
       if (cells > 0 && targetCol >= col && targetCol < col + cells) {
-        return cells === 2 && targetCol === col + 1 ? index + 1 : index;
+        if (cells === 2 && targetCol === col + 1) {
+          let next = index + 1;
+          while (next < comment.length) {
+            const trailing = comment[next];
+            if (trailing === undefined || trailing === "\n" || charWidth(trailing) > 0) break;
+            next += 1;
+          }
+          return next;
+        }
+        return index;
       }
     }
     if (index === comment.length) break;
