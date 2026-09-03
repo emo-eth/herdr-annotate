@@ -4,10 +4,15 @@ import fs from "node:fs";
 import readline from "node:readline";
 import { sanitizeTerminalText, wrapText } from "./format";
 import { stateDir } from "./paths";
-import { cursorAtEditorCell, editorGeometry, layoutComment } from "./layout";
+import {
+  cursorAtEditorCell,
+  editorGeometry,
+  editorViewportStart,
+  layoutComment,
+} from "./layout";
 import { lineEnd, lineStart, resolveEditKey, wordEnd, wordStart } from "./edit-keys";
-import { SgrMouseDecoder } from "./mouse";
-import { charWidth, stringWidth, truncateToWidth } from "./width";
+import { isLeftMousePress, SgrMouseDecoder } from "./mouse";
+import { graphemes, stringWidth, truncateToWidth } from "./width";
 import type { StoreResult } from "./store";
 import {
   parsePendingAnnotation,
@@ -48,6 +53,7 @@ try {
 const out = (value: string) => process.stdout.write(value);
 const comment: string[] = [];
 let cursor = 0;
+let editorStart = 0;
 let status = "";
 let finished = false;
 
@@ -63,11 +69,11 @@ function moveCursorVertical(delta: number): void {
   // Land on the character whose cell column is closest to the current one.
   let offset = 0;
   let used = 0;
-  for (const char of allLines[targetRow] as string) {
-    const width = charWidth(char);
+  for (const grapheme of graphemes(allLines[targetRow] as string)) {
+    const width = stringWidth(grapheme);
     if (used + width > col) break;
     used += width;
-    offset += 1;
+    for (const _character of grapheme) offset += 1;
   }
   cursor = next + offset;
 }
@@ -82,7 +88,12 @@ function render(): void {
   const wrappedSelection = wrapText(sanitizeTerminalText(pending.selectedText), geometry.innerWidth);
   const selected = wrappedSelection.slice(0, geometry.selectionRows);
   const editing = layoutComment(comment, cursor, geometry.innerWidth);
-  const editorStart = Math.max(0, editing.cursorRow - geometry.editorRows + 1);
+  editorStart = editorViewportStart(
+    editorStart,
+    editing.cursorRow,
+    editing.lines.length,
+    geometry.editorRows,
+  );
   const visibleEditor = editing.lines.slice(editorStart, editorStart + geometry.editorRows);
 
   out("\x1b[2J\x1b[H\x1b[?25l");
@@ -173,16 +184,18 @@ process.stdin.on("keypress", (text: string, key: readline.Key) => {
   if (mouseInput.intercepted) {
     let handled = false;
     for (const report of mouseInput.reports) {
-      if (
-        report.action !== "press" ||
-        (report.button & 3) !== 0 ||
-        (report.button & 32) !== 0 ||
-        (report.button & 64) !== 0
-      ) continue;
+      if (!isLeftMousePress(report)) continue;
       const geometry = editorGeometry(process.stdout.columns || 86, process.stdout.rows || 22);
+      const editing = layoutComment(comment, cursor, geometry.innerWidth);
+      editorStart = editorViewportStart(
+        editorStart,
+        editing.cursorRow,
+        editing.lines.length,
+        geometry.editorRows,
+      );
       const nextCursor = cursorAtEditorCell(
         comment,
-        cursor,
+        editorStart,
         report.x - 1,
         report.y - 1,
         geometry,
@@ -241,8 +254,11 @@ process.stdin.on("keypress", (text: string, key: readline.Key) => {
   } else if (key.name === "return") {
     comment.splice(cursor, 0, "\n");
     cursor += 1;
+  } else if (key.name === "tab") {
+    comment.splice(cursor, 0, " ");
+    cursor += 1;
   } else if (text && !key.ctrl && !key.meta) {
-    const inserted = Array.from(text);
+    const inserted = Array.from(text.replaceAll("\t", " "));
     comment.splice(cursor, 0, ...inserted);
     cursor += inserted.length;
   }
