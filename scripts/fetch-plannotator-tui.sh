@@ -7,7 +7,7 @@
 #   bin/plannotator-tui.version    what is installed; matching the pin means nothing to do
 #
 # Modes, in order:
-#   1. already installed at the pinned version         -> exit 0
+#   1. installed at the pinned version and runs here   -> exit 0
 #   2. PLANNOTATOR_TUI_BIN=/path/to/binary is set      -> copy it (local testing, no download)
 #   3. otherwise download the release asset for this platform and verify its sha256
 #
@@ -21,58 +21,12 @@ version="$(tr -d '[:space:]' < plannotator-tui.version)"
 mkdir -p bin
 destination="bin/plannotator-tui.exe"
 stamp="bin/plannotator-tui.version"
-target_file="bin/plannotator-tui.target"
-installed="$(cat "$stamp" 2>/dev/null || true)"
-installed_target="$(cat "$target_file" 2>/dev/null || true)"
+installed="$(cat bin/plannotator-tui.version 2>/dev/null || true)"
 
-detect_target() {
-  case "$(uname -s)/$(uname -m)" in
-    Darwin/arm64)              echo "aarch64-apple-darwin" ;;
-    Darwin/x86_64)             echo "x86_64-apple-darwin" ;;
-    Linux/x86_64)              echo "x86_64-unknown-linux-gnu" ;;
-    Linux/aarch64|Linux/arm64) echo "aarch64-unknown-linux-gnu" ;;
-    MINGW*/*64*|MSYS*/*64*|CYGWIN*/*64*) echo "x86_64-pc-windows-msvc" ;;
-    MINGW*/*arm64*|MSYS*/*arm64*|CYGWIN*/*arm64*|MINGW*/*aarch64*|MSYS*/*aarch64*|CYGWIN*/*aarch64*) echo "aarch64-pc-windows-msvc" ;;
-    *) echo "unknown" ;;
-  esac
-}
-
-target="$(detect_target)"
-if [ "$target" = "unknown" ]; then
-  if command -v node >/dev/null 2>&1; then
-    target="$(node -e '
-      const p = process.platform, a = process.arch;
-      if (p === "darwin") console.log(a === "arm64" ? "aarch64-apple-darwin" : "x86_64-apple-darwin");
-      else if (p === "linux") console.log(a === "arm64" ? "aarch64-unknown-linux-gnu" : "x86_64-unknown-linux-gnu");
-      else if (p === "win32") console.log(a === "arm64" ? "aarch64-pc-windows-msvc" : "x86_64-pc-windows-msvc");
-      else console.log("unknown");
-    ' 2>/dev/null || echo "unknown")"
-  elif command -v bun >/dev/null 2>&1; then
-    target="$(bun -e '
-      const p = process.platform, a = process.arch;
-      if (p === "darwin") console.log(a === "arm64" ? "aarch64-apple-darwin" : "x86_64-apple-darwin");
-      else if (p === "linux") console.log(a === "arm64" ? "aarch64-unknown-linux-gnu" : "x86_64-unknown-linux-gnu");
-      else if (p === "win32") console.log(a === "arm64" ? "aarch64-pc-windows-msvc" : "x86_64-pc-windows-msvc");
-      else console.log("unknown");
-    ' 2>/dev/null || echo "unknown")"
-  fi
-fi
-
-is_runnable_and_matches() {
-  [ -x "$destination" ] || return 1
-  if [ -n "$installed_target" ] && [ "$target" != "unknown" ] && [ "$installed_target" != "$target" ]; then
-    return 1
-  fi
-  local bin_ver
-  bin_ver="$("$destination" --version 2>/dev/null)" || return 1
-  [ "$bin_ver" = "plannotator-tui $version" ] || return 1
-  return 0
-}
-
-if [ -x "$destination" ] && [ "$installed" = "$version" ] && is_runnable_and_matches && [ -z "${PLANNOTATOR_TUI_BIN:-}" ]; then
-  if [ ! -f "$target_file" ] && [ "$target" != "unknown" ]; then
-    echo "$target" > "$target_file"
-  fi
+# The stamp alone is not enough: a plugin directory synced from another machine carries that
+# machine's binary and stamp. Run it; one that cannot execute here falls through to the download.
+if [ -x "$destination" ] && [ "$installed" = "$version" ] && [ -z "${PLANNOTATOR_TUI_BIN:-}" ] \
+  && "$destination" --version </dev/null >/dev/null 2>&1; then
   echo "plannotator-tui $version already installed"
   exit 0
 fi
@@ -83,23 +37,19 @@ if [ -n "${PLANNOTATOR_TUI_BIN:-}" ]; then
   cp "$PLANNOTATOR_TUI_BIN" "$destination"
   chmod +x "$destination"
   printf '%s' "$version" > "$stamp"
-  if [ "$target" != "unknown" ]; then
-    echo "$target" > "$target_file"
-  fi
   echo "installed plannotator-tui from $PLANNOTATOR_TUI_BIN (local build, stamped $version)"
   exit 0
 fi
 
-if [ "$target" = "unknown" ]; then
-  echo "warning: no plannotator-tui build for $(uname -s)/$(uname -m); the review pane is unavailable" >&2
-  exit 0
-fi
-
-case "$target" in
-  *windows*) asset="plannotator-tui-$target.exe" ;;
-  *)         asset="plannotator-tui-$target" ;;
+case "$(uname -s)/$(uname -m)" in
+  Darwin/arm64)            target=aarch64-apple-darwin ;;
+  Darwin/x86_64)           target=x86_64-apple-darwin ;;
+  Linux/x86_64)            target=x86_64-unknown-linux-gnu ;;
+  Linux/aarch64|Linux/arm64) target=aarch64-unknown-linux-gnu ;;
+  *) echo "warning: no plannotator-tui build for $(uname -s)/$(uname -m); the review pane is unavailable" >&2; exit 0 ;;
 esac
 
+asset="plannotator-tui-$target"
 base="https://github.com/plannotator/plannotator-tui/releases/download/v$version"
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
@@ -133,5 +83,4 @@ rm -f "$destination"
 cp "$tmp/$asset" "$destination"
 chmod +x "$destination"
 printf '%s' "$version" > "$stamp"
-echo "$target" > "$target_file"
 echo "installed plannotator-tui $version ($target)"

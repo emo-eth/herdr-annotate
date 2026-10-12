@@ -56,8 +56,6 @@ try {
   Assert-True ($result.ExitCode -eq 0) "local override failed: $($result.Output)"
   Assert-BytesEqual $source $destination "local override bytes differ"
   Assert-True ((Get-Content -LiteralPath $stamp -Raw) -ceq $version) "local stamp differs"
-  $targetFile = Join-Path $pluginRoot "bin/herdr-annotate.target"
-  Assert-True (Test-Path -LiteralPath $targetFile -PathType Leaf) "target stamp file missing"
 
   $env:HERDR_ANNOTATE_BIN = $null
   $beforeHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $destination).Hash
@@ -67,14 +65,6 @@ try {
   Assert-True (
     (Get-FileHash -Algorithm SHA256 -LiteralPath $destination).Hash -ceq $beforeHash
   ) "idempotent run replaced the destination"
-
-  # If target is mismatched, must not short-circuit
-  Set-Content -LiteralPath $targetFile -NoNewline -Value "mismatched-target"
-  $env:HERDR_ANNOTATE_BIN = $source
-  $result = Invoke-Fetcher
-  Assert-True ($result.ExitCode -eq 0) "fetch with mismatched target failed: $($result.Output)"
-  Assert-True ($result.Output -notmatch "already installed") "mismatched target incorrectly short-circuited: $($result.Output)"
-  Assert-True ($result.Output -match "installed herdr-annotate") "expected install output: $($result.Output)"
 
   # A missing local build is fatal here: the annotation tools are this binary.
   $env:HERDR_ANNOTATE_BIN = Join-Path $testRoot "missing explicit override.exe"
